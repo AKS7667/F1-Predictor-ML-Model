@@ -1,0 +1,165 @@
+import fastf1
+import time
+import pandas as pd
+import os
+
+# ---- Config ----
+cache_dir = "data/fastf1_cache"
+os.makedirs(cache_dir, exist_ok=True)
+os.makedirs("data", exist_ok=True)
+fastf1.Cache.enable_cache(cache_dir)
+
+PROGRESS_FILE = "data/fetch_progress.csv"
+RESULTS_FILE = "data/f1_all_results.parquet"
+LAPS_FILE = "data/f1_all_laps.parquet"
+WEATHER_FILE = "data/f1_all_weather.parquet"
+
+YEARS = [2021, 2022, 2023, 2024, 2025]
+SESSION_TYPES = ['FP1', 'FP2', 'FP3', 'Q', 'SQ', 'S', 'R']
+RATE_LIMIT_WAIT = 3600
+
+print("I am running the updated file now 1")
+
+def load_progress():
+    """Load set of already-fetched (year, round, session_type) tuples
+    from both the progress file AND existing parquet files."""
+    completed = set()
+
+    # From progress tracker
+    if os.path.exists(PROGRESS_FILE):
+        df = pd.read_csv(PROGRESS_FILE)
+        completed.update(zip(df['year'], df['round'], df['session_type']))
+
+    # From existing parquet files — if data is already saved, skip it
+    for filepath in [RESULTS_FILE, LAPS_FILE, WEATHER_FILE]:
+        if os.path.exists(filepath):
+            df = pd.read_parquet(filepath, columns=['Season', 'Round', 'SessionType'])
+            completed.update(zip(df['Season'], df['Round'], df['SessionType']))
+
+    return completed
+
+
+def save_progress(year, round_no, stype):
+    row = pd.DataFrame([{'year': year, 'round': round_no, 'session_type': stype}])
+    row.to_csv(PROGRESS_FILE, mode='a', header=not os.path.exists(PROGRESS_FILE), index=False)
+
+
+def is_rate_limited(exception):
+    msg = str(exception).lower()
+    return any(term in msg for term in [
+        '429', 'rate limit', 'too many requests', 'timed out',
+        'timeout', 'calls/h', '500'
+    ])
+
+
+def load_session_with_retry(year, round_no, session_type='R', retries=3, delay=5):
+    for attempt in range(retries):
+        try:
+            session = fastf1.get_session(year, round_no, session_type)
+            # FastF1 checks its own cache internally — if cached, no API call
+            session.load(laps=True, telemetry=False, weather=True, messages=False)
+            return session
+        except Exception as e:
+            if is_rate_limited(e):
+                print(f"\n*** Rate limit hit at {year} R{round_no} {session_type}. "
+                      f"Waiting {RATE_LIMIT_WAIT // 60} minutes... ***\n")
+                time.sleep(RATE_LIMIT_WAIT)
+                continue
+            print(f"Attempt {attempt+1} failed for {year} R{round_no} {session_type}: {e}")
+            time.sleep(delay)
+    print(f"Failed to load {year} R{round_no} {session_type} after {retries} retries.")
+    return None
+
+
+def append_to_parquet(df, filepath):
+    if os.path.exists(filepath):
+        existing = pd.read_parquet(filepath)
+        df = pd.concat([existing, df], ignore_index=True)
+    df.to_parquet(filepath, index=False)
+
+
+# ---- Main fetch loop ----
+completed = load_progress()
+print(f"Already have {len(completed)} sessions saved. Skipping those.\n")
+
+for year in YEARS:
+    try:
+        schedule = fastf1.get_event_schedule(year)
+    except Exception as e:
+        print(f"Failed to load schedule for {year}: {e}")
+        continue
+
+    for _, event in schedule.iterrows():
+        round_no = event['RoundNumber']
+        if round_no == 0:
+            continue
+
+        location = event['Location']
+        event_name = event['EventName']
+
+        event_format = str(event.get('EventFormat', '')).lower()
+
+
+        has_sprint = 'sprint' in event_format
+        for stype in SESSION_TYPES:
+
+            if (year, round_no, stype) in completed:
+                continue
+
+            if stype in ('S', 'SQ') and not has_sprint:
+                continue
+
+            session = load_session_with_retry(year, round_no, session_type=stype)
+            if session is None:
+                continue
+
+            metadata = {
+                'Season': year,
+                'Round': round_no,
+                'Location': location,
+                'Circuit': event_name,
+                'SessionType': stype,
+            }
+
+# ---- Results ----
+            try:
+                results = session.results
+                if results is not None and not results.empty:
+                    results = results.copy()
+                    for k, v in metadata.items():
+                        results[k] = v
+                    append_to_parquet(results, RESULTS_FILE)
+            except Exception:
+                pass
+
+            # ---- Laps ----
+            try:
+                laps = session.laps
+                if laps is not None and not laps.empty:
+                    laps = laps.copy()
+                    for k, v in metadata.items():
+                        laps[k] = v
+                    append_to_parquet(laps, LAPS_FILE)
+            except Exception:
+                pass
+
+            # ---- Weather ----
+            try:
+                weather = session.weather_data
+                if weather is not None and not weather.empty:
+                    weather = weather.copy()
+                    for k, v in metadata.items():
+                        weather[k] = v
+                    append_to_parquet(weather, WEATHER_FILE)
+            except Exception:
+                pass
+
+            save_progress(year, round_no, stype)
+            print(f"Loaded {year} {event_name} - {stype}")
+            time.sleep(0.2)
+
+print("\n=== Fetch complete ===")
+for f in [RESULTS_FILE, LAPS_FILE, WEATHER_FILE]:
+    if os.path.exists(f):
+        df = pd.read_parquet(f)
+        print(f"{f}: {len(df)} rows, {len(df.columns)} columns")
