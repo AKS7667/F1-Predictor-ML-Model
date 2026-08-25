@@ -120,7 +120,7 @@ CONFIG = {
     # Path to the cleaned race-level dataset. Expected to be produced by a
     # separate ETL step that joins Ergast API tables (results, qualifying,
     # constructors, drivers, circuits) into one row per (race, driver).
-    "data_path": "data/f1_race_level.parquet",
+    "data_path": "data/f1_model_data.parquet",
 
     # Seasons used for training. We hold out the most recent full season for
     # testing — this mirrors how the model would be deployed (predict the
@@ -237,9 +237,10 @@ def load_data(path: str) -> pd.DataFrame:
     them "worse than last finisher" which roughly matches championship logic.
     """
     df = pd.read_parquet(path)
+    df["race_id"] = df["Season"].astype(str) + "_" + df["Round"].astype(str)
 
     # Sanity checks. These have caught bugs in upstream ETL more than once.
-    assert df["finishing_position"].between(1, 21).all(), \
+    assert df["Position"].between(1, 21).all(), \
         "finishing_position out of expected range — check DNF handling in ETL"
     assert df["race_id"].notna().all(), "race_id has nulls — joins broke upstream"
 
@@ -256,13 +257,17 @@ def split_features_target(df: pd.DataFrame):
     Categorical columns are converted to pandas 'category' dtype so XGBoost's
     native categorical support can handle them without one-hot blowup.
     """
-    target_col = "finishing_position"
+    df["race_id"] = df["Season"].astype(str) + "_" + df["Round"].astype(str)
+
+    target_col = "Position"
 
     # Drop identifiers from features. Keeping driver_id as a categorical can
     # actually help (a model can learn "Verstappen tends to overperform car"),
     # but it also risks overfitting to specific drivers. We keep it and rely
     # on regularisation; ablation testing should confirm it helps.
-    drop_cols = ["race_id", "season", "round", target_col]
+ 
+    drop_cols = ["Position", "Season", "Round", "race_id",
+             "Abbreviation", "TeamName", "Location", "Circuit"]
     feature_cols = [c for c in df.columns if c not in drop_cols]
 
     X = df[feature_cols].copy()
@@ -393,8 +398,8 @@ def main():
     df = load_data(CONFIG["data_path"])
 
     # 2. Train/test split by season — see CONFIG comment on why not random.
-    train_df = df[df["season"].isin(CONFIG["train_seasons"])]
-    test_df  = df[df["season"].isin(CONFIG["test_seasons"])]
+    train_df = df[df["Season"].isin(CONFIG["train_seasons"])]
+    test_df  = df[df["Season"].isin(CONFIG["test_seasons"])]
 
     X_train, y_train, groups_train = split_features_target(train_df)
     X_test,  y_test,  _            = split_features_target(test_df)

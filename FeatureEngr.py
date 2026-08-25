@@ -10,7 +10,7 @@ weather = pd.read_parquet("data/f1_all_weather.parquet")
 # BASE: Race results only
 # ============================================================
 races = results[results.SessionType == 'R'].copy()
-races = races[['DriverId', 'TeamName', 'GridPosition', 'Position', 'Status',
+races = races[['Abbreviation', 'TeamName', 'GridPosition', 'Position', 'Status',
                'Season', 'Round', 'Location', 'Circuit']].copy()
 
 races['GridPosition'] = pd.to_numeric(races['GridPosition'], errors='coerce')
@@ -23,7 +23,7 @@ races['GridPosition'] = races['GridPosition'].fillna(20).astype(int)
 # ============================================================
 # FEATURE 1: Qualifying gap to pole (from results, already there)
 # ============================================================
-quali = results[results.SessionType == 'Q'][['DriverId', 'Season', 'Round', 'Q1', 'Q2', 'Q3']].copy()
+quali = results[results.SessionType == 'Q'][['Abbreviation', 'Season', 'Round', 'Q1', 'Q2', 'Q3']].copy()
 
 # Best quali time per driver (furthest session they reached)
 for col in ['Q1', 'Q2', 'Q3']:
@@ -36,14 +36,14 @@ pole_time = quali.groupby(['Season', 'Round'])['QualiBestTime'].min().reset_inde
 quali = quali.merge(pole_time, on=['Season', 'Round'], how='left')
 quali['QualiGapToPole'] = quali['QualiBestTime'] - quali['PoleTime']
 
-races = races.merge(quali[['DriverId', 'Season', 'Round', 'QualiGapToPole']],
-                    on=['DriverId', 'Season', 'Round'], how='left')
+races = races.merge(quali[['Abbreviation', 'Season', 'Round', 'QualiGapToPole']],
+                    on=['Abbreviation', 'Season', 'Round'], how='left')
 
 # ============================================================
 # FEATURE 2: Driver form (avg finish last 5 races)
 # ============================================================
-races = races.sort_values(['DriverId', 'Season', 'Round'])
-races['DriverForm'] = (races.groupby('DriverId')['Position']
+races = races.sort_values(['Abbreviation', 'Season', 'Round'])
+races['DriverForm'] = (races.groupby('Abbreviation')['Position']
                        .transform(lambda x: x.shift(1).rolling(5, min_periods=1).mean()))
 
 # ============================================================
@@ -75,8 +75,8 @@ races = races.merge(circuit_overtaking, on='Circuit', how='left')
 # ============================================================
 # FEATURE 5: Driver's history at this circuit
 # ============================================================
-races['DriverCircuitAvg'] = (races.sort_values(['DriverId', 'Circuit', 'Season'])
-                             .groupby(['DriverId', 'Circuit'])['Position']
+races['DriverCircuitAvg'] = (races.sort_values(['Abbreviation', 'Circuit', 'Season'])
+                             .groupby(['Abbreviation', 'Circuit'])['Position']
                              .transform(lambda x: x.shift(1).expanding().mean()))
 
 # ============================================================
@@ -101,7 +101,7 @@ fp2 = fp2.dropna(subset=['LapTime'])
 fp2 = fp2[fp2['Deleted'] != True]
 fp2['LapSeconds'] = fp2['LapTime'].dt.total_seconds()
 
-fp2_best = (fp2.groupby(['Season', 'Round', 'DriverId'])['LapSeconds']
+fp2_best = (fp2.groupby(['Season', 'Round', 'Driver'])['LapSeconds']
             .min().reset_index(name='FP2BestLap'))
 
 fp2_fastest = (fp2_best.groupby(['Season', 'Round'])['FP2BestLap']
@@ -110,15 +110,17 @@ fp2_fastest = (fp2_best.groupby(['Season', 'Round'])['FP2BestLap']
 fp2_best = fp2_best.merge(fp2_fastest, on=['Season', 'Round'], how='left')
 fp2_best['FP2GapToFastest'] = fp2_best['FP2BestLap'] - fp2_best['FP2SessionBest']
 
-races = races.merge(fp2_best[['DriverId', 'Season', 'Round', 'FP2GapToFastest']],
-                    on=['DriverId', 'Season', 'Round'], how='left')
+fp2_best = fp2_best.rename(columns={'Driver': 'Abbreviation'})
+
+races = races.merge(fp2_best[['Abbreviation', 'Season', 'Round', 'FP2GapToFastest']],
+                    on=['Abbreviation', 'Season', 'Round'], how='left')
 
 # ============================================================
 # FEATURE 8: Is this a DNF-prone driver? (historical DNF rate)
 # ============================================================
 races['IsDNF'] = races['Status'].apply(lambda x: 0 if x == 'Finished' or str(x).startswith('+') else 1)
-races['DNFRate'] = (races.sort_values(['DriverId', 'Season', 'Round'])
-                    .groupby('DriverId')['IsDNF']
+races['DNFRate'] = (races.sort_values(['Abbreviation', 'Season', 'Round'])
+                    .groupby('Abbreviation')['IsDNF']
                     .transform(lambda x: x.shift(1).expanding().mean()))
 
 # ============================================================
@@ -127,6 +129,6 @@ races['DNFRate'] = (races.sort_values(['DriverId', 'Season', 'Round'])
 races = races.drop(columns=['Status', 'PosChange', 'IsDNF'])
 
 # Save
-races.to_parquet("data/f1_model_ready.parquet", index=False)
+races.to_parquet("data/f1_model_data.parquet", index=False)
 print(f"Saved {len(races)} rows with columns:")
 print(list(races.columns))
