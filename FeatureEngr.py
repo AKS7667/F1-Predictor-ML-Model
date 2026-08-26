@@ -15,6 +15,7 @@ races = races[['Abbreviation', 'TeamName', 'GridPosition', 'Position', 'Status',
 
 races['GridPosition'] = pd.to_numeric(races['GridPosition'], errors='coerce')
 races['Position'] = pd.to_numeric(races['Position'], errors='coerce')
+races["race_id"] = races["Season"].astype(str) + "_" + races["Round"].astype(str)
 
 # DNFs get position 21
 races['Position'] = races['Position'].fillna(21).astype(int)

@@ -237,7 +237,6 @@ def load_data(path: str) -> pd.DataFrame:
     them "worse than last finisher" which roughly matches championship logic.
     """
     df = pd.read_parquet(path)
-    df["race_id"] = df["Season"].astype(str) + "_" + df["Round"].astype(str)
 
     # Sanity checks. These have caught bugs in upstream ETL more than once.
     assert df["Position"].between(1, 21).all(), \
@@ -257,7 +256,6 @@ def split_features_target(df: pd.DataFrame):
     Categorical columns are converted to pandas 'category' dtype so XGBoost's
     native categorical support can handle them without one-hot blowup.
     """
-    df["race_id"] = df["Season"].astype(str) + "_" + df["Round"].astype(str)
 
     target_col = "Position"
 
@@ -301,7 +299,7 @@ def train_with_cv(X: pd.DataFrame, y: pd.Series, groups: pd.Series, config: dict
     cv = GroupKFold(n_splits=config["cv_folds"])
     fold_models = []
     fold_metrics = []
-
+  
     for fold_idx, (train_idx, val_idx) in enumerate(cv.split(X, y, groups)):
         X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
         y_tr, y_val = y.iloc[train_idx], y.iloc[val_idx]
