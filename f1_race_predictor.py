@@ -126,10 +126,10 @@ CONFIG = {
     # testing — this mirrors how the model would be deployed (predict the
     # *next* race given everything before it). Random splits would leak future
     # info into training and inflate metrics.
-    "train_seasons": list(range(2014, 2024)),  # turbo-hybrid era only;
+    "train_seasons": list(range(2021, 2025)),  # turbo-hybrid era only;
                                                # pre-2014 cars are a different
                                                # regime and would add noise.
-    "test_seasons":  [2024],
+    "test_seasons":  [2025],
 
     # ---- Model hyperparameters ----
     # These are sensible defaults for tabular regression with ~10k rows.
@@ -299,7 +299,7 @@ def train_with_cv(X: pd.DataFrame, y: pd.Series, groups: pd.Series, config: dict
     cv = GroupKFold(n_splits=config["cv_folds"])
     fold_models = []
     fold_metrics = []
-  
+
     for fold_idx, (train_idx, val_idx) in enumerate(cv.split(X, y, groups)):
         X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
         y_tr, y_val = y.iloc[train_idx], y.iloc[val_idx]
@@ -308,7 +308,7 @@ def train_with_cv(X: pd.DataFrame, y: pd.Series, groups: pd.Series, config: dict
         # set up above. Saves us from manual one-hot encoding (which would
         # blow circuit_id into ~30 columns).
         model = xgb.XGBRegressor(
-            **config["xgb_params"],
+            **config["xgb_params"], # # ** unpacks the dict into keys as param names and their values as values. 
             enable_categorical=True,
             early_stopping_rounds=config["early_stopping_rounds"],
         )
@@ -317,6 +317,7 @@ def train_with_cv(X: pd.DataFrame, y: pd.Series, groups: pd.Series, config: dict
             X_tr, y_tr,
             # Eval set drives early stopping. Without it, we'd train all
             # 2000 rounds even if val loss flatlined at round 300.
+            # so train --> eval set --> train --> eval set Until the eval set stops improving for 'early_stop' number of rounds.
             eval_set=[(X_val, y_val)],
             verbose=False,
         )
@@ -372,6 +373,10 @@ def evaluate(models, X_test: pd.DataFrame, y_test: pd.Series,
         spearman_per_race.append(rho)
 
         # Hit rate = |predicted top-k ∩ actual top-k| / k
+
+        # Here we simply compare indeses because race ids, y preds and y tests, all 
+        # come from the same root Dataframe, hence are already correctly indexed. 
+
         actual_top3 = set(race.nsmallest(3, "y_true").index)
         pred_top3   = set(race.nsmallest(3, "y_pred").index)
         podium_hits.append(len(actual_top3 & pred_top3) / 3)
@@ -400,7 +405,7 @@ def main():
     test_df  = df[df["Season"].isin(CONFIG["test_seasons"])]
 
     X_train, y_train, groups_train = split_features_target(train_df)
-    X_test,  y_test,  _            = split_features_target(test_df)
+    X_test,  y_test,  groups_test = split_features_target(test_df)
 
     # 3. Train with grouped CV
     models, fold_metrics = train_with_cv(X_train, y_train, groups_train, CONFIG)
@@ -409,7 +414,7 @@ def main():
     print(f"\nCV MAE (mean across folds): {cv_mae:.3f}")
 
     # 4. Evaluate on held-out season
-    results = evaluate(models, X_test, y_test, test_df["race_id"])
+    results = evaluate(models, X_test, y_test, groups_test)
 
     print("\n=== Held-out Test Results ===")
     print(f"  MAE              : {results['mae']:.3f}   (target: < 3.0)")
@@ -430,6 +435,10 @@ def main():
 # 5. Compare against LightGBM and CatBoost baselines (planned A/B).
 # 6. Use TimeSeriesSplit alongside GroupKFold to confirm we're not leaking
 #    season-level info.
+
+#7. Use points target for first 10 finishers or first 3 finishers to emphasize 
+#   the importance of podium and points finishers. Right now, the model regards a prediction of 3rd against an actual 1st
+# just the same as a prediction of 21st against an actual 19th. 
 
 if __name__ == "__main__":
     main()
