@@ -408,7 +408,7 @@ def main():
     test_df  = df[df["Season"].isin(CONFIG["test_seasons"])]
 
     X_train, y_train, groups_train = split_features_target(train_df)
-    X_test,  y_test,  _            = split_features_target(test_df)
+    X_test,  y_test,  groups_test  = split_features_target(test_df)
 
     # 3. Train with grouped CV
     models, fold_metrics = train_with_cv(X_train, y_train, groups_train, CONFIG)
@@ -417,7 +417,7 @@ def main():
     print(f"\nCV MAE (mean across folds): {cv_mae:.3f}")
 
     # 4. Evaluate on held-out season
-    results = evaluate(models, X_test, y_test, test_df["race_id"])
+    results = evaluate(models, X_test, y_test, groups_test)
 
 
 
