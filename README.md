@@ -5,7 +5,9 @@
 ![License](https://shields.io)
 
 This project trains a XGBregressor ML model, with cross validation and engineered features to make predictions 
-A short, punchy 1-2 sentence description explaining exactly what the project does, who it is for, and why it exists.
+for the outcomes of a Formula 1 race. 
+The model is given a squared error objective. 
+
 
 ## 📋 Table of Contents
 - [Prerequisites](#prerequisites)

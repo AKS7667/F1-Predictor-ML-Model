@@ -90,6 +90,8 @@ We evaluate the model on a held-out set of recent races using:
 ================================================================================
 """
 
+
+
 # =============================================================================
 # IMPORTS
 # =============================================================================
@@ -97,6 +99,7 @@ We evaluate the model on a held-out set of recent races using:
 # because (per the model justification above) GBDTs are the right tool here.
 import numpy as np
 import pandas as pd
+import os
 
 # scikit-learn provides the data-splitting and metrics utilities. We do NOT
 # use sklearn's GradientBoostingRegressor because it is materially slower and
@@ -109,7 +112,6 @@ from scipy.stats import spearmanr
 # can plug it into sklearn pipelines/CV without friction.
 import xgboost as xgb
 
-
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
@@ -120,16 +122,16 @@ CONFIG = {
     # Path to the cleaned race-level dataset. Expected to be produced by a
     # separate ETL step that joins Ergast API tables (results, qualifying,
     # constructors, drivers, circuits) into one row per (race, driver).
-    "data_path": "data/f1_model_data.parquet",
+    "data_path": "data/f1_features.parquet",
 
     # Seasons used for training. We hold out the most recent full season for
     # testing — this mirrors how the model would be deployed (predict the
     # *next* race given everything before it). Random splits would leak future
     # info into training and inflate metrics.
-    "train_seasons": list(range(2014, 2024)),  # turbo-hybrid era only;
+    "train_seasons": list(range(2014, 2025)),  # turbo-hybrid era only;
                                                # pre-2014 cars are a different
                                                # regime and would add noise.
-    "test_seasons":  [2024],
+    "test_seasons":  [2025],
 
     # ---- Model hyperparameters ----
     # These are sensible defaults for tabular regression with ~10k rows.
@@ -257,7 +259,7 @@ def split_features_target(df: pd.DataFrame):
     Categorical columns are converted to pandas 'category' dtype so XGBoost's
     native categorical support can handle them without one-hot blowup.
     """
-    df["race_id"] = df["Season"].astype(str) + "_" + df["Round"].astype(str)
+    df.loc[:, "race_id"] = df["Season"].astype(str) + "_" + df["Round"].astype(str)
 
     target_col = "Position"
 
@@ -333,6 +335,10 @@ def train_with_cv(X: pd.DataFrame, y: pd.Series, groups: pd.Series, config: dict
 
         print(f"[fold {fold_idx}] MAE={mae:.3f}  best_iter={model.best_iteration}")
 
+        os.makedirs("models", exist_ok=True)
+        for i, m in enumerate(fold_models):
+            m.save_model(f"models/fold_{i}.json")
+
     return fold_models, fold_metrics
 
 
@@ -404,7 +410,7 @@ def main():
     test_df  = df[df["Season"].isin(CONFIG["test_seasons"])]
 
     X_train, y_train, groups_train = split_features_target(train_df)
-    X_test,  y_test,  _            = split_features_target(test_df)
+    X_test,  y_test,  groups_test  = split_features_target(test_df)
 
     # 3. Train with grouped CV
     models, fold_metrics = train_with_cv(X_train, y_train, groups_train, CONFIG)
@@ -413,7 +419,9 @@ def main():
     print(f"\nCV MAE (mean across folds): {cv_mae:.3f}")
 
     # 4. Evaluate on held-out season
-    results = evaluate(models, X_test, y_test, test_df["race_id"])
+    results = evaluate(models, X_test, y_test, groups_test)
+
+
 
     print("\n=== Held-out Test Results ===")
     print(f"  MAE              : {results['mae']:.3f}   (target: < 3.0)")
