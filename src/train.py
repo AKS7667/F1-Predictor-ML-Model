@@ -399,6 +399,8 @@ def main():
 
     # 2. Train/test split by season — see CONFIG comment on why not random.
     train_df = df[df["Season"].isin(CONFIG["train_seasons"])]
+    train_df = train_df.dropna(subset=["Position"])           # incomplete races can't train
+    
     test_df  = df[df["Season"].isin(CONFIG["test_seasons"])]
 
     X_train, y_train, groups_train = split_features_target(train_df)
