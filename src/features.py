@@ -6,23 +6,24 @@ results = pd.read_parquet("data/f1_all_results.parquet")
 laps = pd.read_parquet("data/f1_all_laps.parquet")
 weather = pd.read_parquet("data/f1_all_weather.parquet")
 
-# ============================================================
+
 # BASE: Race results only
-# ============================================================
+
 races = results[results.SessionType == 'R'].copy()
 races = races[['Abbreviation', 'TeamName', 'GridPosition', 'Position', 'Status',
                'Season', 'Round', 'Location', 'Circuit']].copy()
 
 races['GridPosition'] = pd.to_numeric(races['GridPosition'], errors='coerce')
 races['Position'] = pd.to_numeric(races['Position'], errors='coerce')
+races["race_id"] = races["Season"].astype(str) + "_" + races["Round"].astype(str)
 
 # DNFs get position 21
 races['Position'] = races['Position'].fillna(21).astype(int)
 races['GridPosition'] = races['GridPosition'].fillna(20).astype(int)
 
-# ============================================================
+
 # FEATURE 1: Qualifying gap to pole (from results, already there)
-# ============================================================
+
 quali = results[results.SessionType == 'Q'][['Abbreviation', 'Season', 'Round', 'Q1', 'Q2', 'Q3']].copy()
 
 # Best quali time per driver (furthest session they reached)
@@ -39,16 +40,15 @@ quali['QualiGapToPole'] = quali['QualiBestTime'] - quali['PoleTime']
 races = races.merge(quali[['Abbreviation', 'Season', 'Round', 'QualiGapToPole']],
                     on=['Abbreviation', 'Season', 'Round'], how='left')
 
-# ============================================================
-# FEATURE 2: Driver form (avg finish last 5 races)
-# ============================================================
+# FEATURE 2: Driver form : avg finish last 5 races
+
 races = races.sort_values(['Abbreviation', 'Season', 'Round'])
 races['DriverForm'] = (races.groupby('Abbreviation')['Position']
                        .transform(lambda x: x.shift(1).rolling(5, min_periods=1).mean()))
 
-# ============================================================
-# FEATURE 3: Constructor form (avg finish last 5 races)
-# ============================================================
+
+# FEATURE 3: Constructor form : avg finish last 5 races
+
 team_avg = (races.sort_values(['TeamName', 'Season', 'Round'])
             .groupby(['TeamName', 'Season', 'Round'])['Position']
             .mean()
@@ -60,10 +60,11 @@ team_avg['ConstructorForm'] = (team_avg.groupby('TeamName')['TeamRaceAvg']
 races = races.merge(team_avg[['TeamName', 'Season', 'Round', 'ConstructorForm']],
                     on=['TeamName', 'Season', 'Round'], how='left')
 
-# ============================================================
+
 # FEATURE 4: Circuit overtaking difficulty
-# Historical median |finish - grid| at each circuit
-# ============================================================
+
+# Historical median |finish - grid pos| at each circuit
+
 races['PosChange'] = abs(races['GridPosition'] - races['Position'])
 
 circuit_overtaking = (races.groupby('Circuit')['PosChange']
@@ -72,16 +73,16 @@ circuit_overtaking = (races.groupby('Circuit')['PosChange']
 
 races = races.merge(circuit_overtaking, on='Circuit', how='left')
 
-# ============================================================
+
 # FEATURE 5: Driver's history at this circuit
-# ============================================================
+
 races['DriverCircuitAvg'] = (races.sort_values(['Abbreviation', 'Circuit', 'Season'])
                              .groupby(['Abbreviation', 'Circuit'])['Position']
                              .transform(lambda x: x.shift(1).expanding().mean()))
 
-# ============================================================
+
 # FEATURE 6: Rain at race start (binary)
-# ============================================================
+
 race_weather = (weather[weather.SessionType == 'R']
     .sort_values('Time')
     .groupby(['Season', 'Round'])
@@ -93,9 +94,9 @@ race_weather['RainAtStart'] = race_weather['Rainfall'].astype(int)
 races = races.merge(race_weather[['Season', 'Round', 'RainAtStart']],
                     on=['Season', 'Round'], how='left')
 
-# ============================================================
+
 # FEATURE 7: Simple FP2 best lap gap (if available, NaN if not)
-# ============================================================
+
 fp2 = laps[laps.SessionType == 'FP2'].copy()
 fp2 = fp2.dropna(subset=['LapTime'])
 fp2 = fp2[fp2['Deleted'] != True]
@@ -115,20 +116,17 @@ fp2_best = fp2_best.rename(columns={'Driver': 'Abbreviation'})
 races = races.merge(fp2_best[['Abbreviation', 'Season', 'Round', 'FP2GapToFastest']],
                     on=['Abbreviation', 'Season', 'Round'], how='left')
 
-# ============================================================
+
 # FEATURE 8: Is this a DNF-prone driver? (historical DNF rate)
-# ============================================================
+
 races['IsDNF'] = races['Status'].apply(lambda x: 0 if x == 'Finished' or str(x).startswith('+') else 1)
 races['DNFRate'] = (races.sort_values(['Abbreviation', 'Season', 'Round'])
                     .groupby('Abbreviation')['IsDNF']
                     .transform(lambda x: x.shift(1).expanding().mean()))
 
-# ============================================================
-# CLEAN UP — drop leaky / identifier columns, keep features
-# ============================================================
-races = races.drop(columns=['Status', 'PosChange', 'IsDNF'])
 
-# Save
+# CLEAN UPraces = races.drop(columns=['Status', 'PosChange', 'IsDNF'])
+
 races.to_parquet("data/f1_model_data.parquet", index=False)
 print(f"Saved {len(races)} rows with columns:")
 print(list(races.columns))
