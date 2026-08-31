@@ -95,26 +95,26 @@ races = races.merge(race_weather[['Season', 'Round', 'RainAtStart']],
                     on=['Season', 'Round'], how='left')
 
 
-# FEATURE 7: Simple FP2 best lap gap (if available, NaN if not)
+# FEATURE 7: Simple FP2 best lap gap (if available, NaN if not) [Example Feature]
 
-fp2 = laps[laps.SessionType == 'FP2'].copy()
-fp2 = fp2.dropna(subset=['LapTime'])
-fp2 = fp2[fp2['Deleted'] != True]
-fp2['LapSeconds'] = fp2['LapTime'].dt.total_seconds()
+# fp2 = laps[laps.SessionType == 'FP2'].copy()
+# fp2 = fp2.dropna(subset=['LapTime'])
+# fp2 = fp2[fp2['Deleted'] != True]
+# fp2['LapSeconds'] = fp2['LapTime'].dt.total_seconds()
 
-fp2_best = (fp2.groupby(['Season', 'Round', 'Driver'])['LapSeconds']
-            .min().reset_index(name='FP2BestLap'))
+# fp2_best = (fp2.groupby(['Season', 'Round', 'Driver'])['LapSeconds']
+#             .min().reset_index(name='FP2BestLap'))
 
-fp2_fastest = (fp2_best.groupby(['Season', 'Round'])['FP2BestLap']
-               .min().reset_index(name='FP2SessionBest'))
+# fp2_fastest = (fp2_best.groupby(['Season', 'Round'])['FP2BestLap']
+#                .min().reset_index(name='FP2SessionBest'))
 
-fp2_best = fp2_best.merge(fp2_fastest, on=['Season', 'Round'], how='left')
-fp2_best['FP2GapToFastest'] = fp2_best['FP2BestLap'] - fp2_best['FP2SessionBest']
+# fp2_best = fp2_best.merge(fp2_fastest, on=['Season', 'Round'], how='left')
+# fp2_best['FP2GapToFastest'] = fp2_best['FP2BestLap'] - fp2_best['FP2SessionBest']
 
-fp2_best = fp2_best.rename(columns={'Driver': 'Abbreviation'})
+# fp2_best = fp2_best.rename(columns={'Driver': 'Abbreviation'})
 
-races = races.merge(fp2_best[['Abbreviation', 'Season', 'Round', 'FP2GapToFastest']],
-                    on=['Abbreviation', 'Season', 'Round'], how='left')
+# races = races.merge(fp2_best[['Abbreviation', 'Season', 'Round', 'FP2GapToFastest']],
+#                     on=['Abbreviation', 'Season', 'Round'], how='left')
 
 
 # FEATURE 8: Is this a DNF-prone driver? (historical DNF rate)
@@ -125,8 +125,9 @@ races['DNFRate'] = (races.sort_values(['Abbreviation', 'Season', 'Round'])
                     .transform(lambda x: x.shift(1).expanding().mean()))
 
 
-# CLEAN UPraces = races.drop(columns=['Status', 'PosChange', 'IsDNF'])
+# CLEAN UP
+races = races.drop(columns=['Status', 'PosChange', 'IsDNF'])
 
-races.to_parquet("data/f1_model_data.parquet", index=False)
+races.to_parquet("data/f1_features.parquet", index=False)
 print(f"Saved {len(races)} rows with columns:")
 print(list(races.columns))
