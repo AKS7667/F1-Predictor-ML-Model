@@ -1,12 +1,13 @@
 import pandas as pd
 import numpy as np
+from pyparsing import line
 
 # Load raw data
 results = pd.read_parquet("data/f1_all_results.parquet")
 laps = pd.read_parquet("data/f1_all_laps.parquet")
 weather = pd.read_parquet("data/f1_all_weather.parquet")
 
-# ============================================================
+
 # BASE: Race results only
 
 races = results[results.SessionType == 'R'].copy()
@@ -20,6 +21,7 @@ races["race_id"] = races["Season"].astype(str) + "_" + races["Round"].astype(str
 # DNFs get position 21
 races['Position'] = races['Position'].fillna(21).astype(int)
 races['GridPosition'] = races['GridPosition'].fillna(20).astype(int)
+
 
 
 # FEATURE 1: Qualifying gap to pole (from results, already there)
@@ -37,8 +39,16 @@ pole_time = quali.groupby(['Season', 'Round'])['QualiBestTime'].min().reset_inde
 quali = quali.merge(pole_time, on=['Season', 'Round'], how='left')
 quali['QualiGapToPole'] = quali['QualiBestTime'] - quali['PoleTime']
 
-races = races.merge(quali[['Abbreviation', 'Season', 'Round', 'QualiGapToPole']],
-                    on=['Abbreviation', 'Season', 'Round'], how='left')
+quali = quali[['Abbreviation', 'Season', 'Round', 'QualiGapToPole']].copy()
+races = quali.merge(races, on=['Abbreviation','Season','Round'], how='outer')
+
+# drop rows that are quali-only in an already-completed race
+race_happened = races.groupby(['Season', 'Round'])['Position'].transform(lambda x: x.notna().any())
+
+races = races[~(race_happened & races['Position'].isna())]
+
+races["race_id"] = races["Season"].astype(str) + "_" + races["Round"].astype(str)
+
 
 # FEATURE 2: Driver form : avg finish last 5 races
 
