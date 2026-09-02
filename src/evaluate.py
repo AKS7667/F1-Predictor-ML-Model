@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import xgboost as xgb
 from train import split_features_target, evaluate, CONFIG   
+from predict import coverage_report
 
 # 1. load saved features ( parquet produced by features.py )
 df = pd.read_parquet("data/f1_features.parquet")
@@ -20,8 +21,11 @@ for i in range(5):
 # 4. score with the same evaluate() train.py uses
 results = evaluate(fold_models, X_test, y_test, groups_test)
 
+# 5. report what's in the matrix — makes the test set explicit
+print("=== Data coverage ===")
+coverage_report(df)
 
-# 5. score and print
+# 6. score and print
 results = evaluate(fold_models, X_test, y_test, groups_test)
 
 print("\n=== Held-out Test Results ===")

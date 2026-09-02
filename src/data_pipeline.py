@@ -15,7 +15,7 @@ RESULTS_FILE = "data/f1_all_results.parquet"
 LAPS_FILE = "data/f1_all_laps.parquet"
 WEATHER_FILE = "data/f1_all_weather.parquet"
 
-YEARS = list(range(2021, 2026))
+YEARS = list(range(2021, 2027))
 SESSION_TYPES = ['FP1', 'FP2', 'FP3', 'Q', 'SQ', 'S', 'R']
 RATE_LIMIT_WAIT = 3600
 
@@ -61,6 +61,8 @@ def load_session_with_retry(year, round_no, session_type='R', retries=3, delay=5
             session.load(laps=True, telemetry=False, weather=True, messages=False)
             return session
         except Exception as e:
+            if session_does_not_exist(e):
+                return None
             if is_rate_limited(e):
                 print(f"\n*** Rate limit hit at {year} R{round_no} {session_type}. "
                       f"Waiting {RATE_LIMIT_WAIT // 60} minutes... ***\n")
@@ -78,6 +80,9 @@ def append_to_parquet(df, filepath):
         df = pd.concat([existing, df], ignore_index=True)
     df.to_parquet(filepath, index=False)
 
+def session_does_not_exist(exception):
+    msg = str(exception).lower()
+    return 'does not exist' in msg or 'no session' in msg
 
 # ---- Main fetch loop ----
 completed = load_progress()
@@ -108,6 +113,9 @@ for year in YEARS:
                 continue
 
             if stype in ('S', 'SQ') and not has_sprint:
+                continue
+
+            if stype in ('FP2', 'FP3') and has_sprint:
                 continue
 
             session = load_session_with_retry(year, round_no, session_type=stype)

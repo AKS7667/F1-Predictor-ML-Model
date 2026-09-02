@@ -27,7 +27,6 @@ races['GridPosition'] = races['GridPosition'].fillna(20).astype(int)
 
 quali = results[results.SessionType == 'Q'][['Abbreviation', 'Season', 'Round', 'Q1', 'Q2', 'Q3', 
                                                 'TeamName', 'Location', 'Circuit']].copy()
-
 # Convert all times to seconds
 for col in ['Q1', 'Q2', 'Q3']:
     quali[col] = pd.to_timedelta(quali[col]).dt.total_seconds()
