@@ -8,15 +8,17 @@ cache_dir = "data/fastf1_cache"
 os.makedirs(cache_dir, exist_ok=True)
 os.makedirs("data", exist_ok=True)
 fastf1.Cache.enable_cache(cache_dir)
+fastf1.set_log_level('DEBUG')
 
 PROGRESS_FILE = "data/fetch_progress.csv"
 RESULTS_FILE = "data/f1_all_results.parquet"
 LAPS_FILE = "data/f1_all_laps.parquet"
 WEATHER_FILE = "data/f1_all_weather.parquet"
 
-YEARS = [2021, 2022, 2023, 2024, 2025]
+YEARS = list(range(2021, 2026))
 SESSION_TYPES = ['FP1', 'FP2', 'FP3', 'Q', 'SQ', 'S', 'R']
 RATE_LIMIT_WAIT = 3600
+
 
 print("I am running the updated file now 1")
 
@@ -47,8 +49,7 @@ def save_progress(year, round_no, stype):
 def is_rate_limited(exception):
     msg = str(exception).lower()
     return any(term in msg for term in [
-        '429', 'rate limit', 'too many requests', 'timed out',
-        'timeout', 'calls/h', '500'
+        '429', 'rate limit', 'too many requests', 'calls/h',
     ])
 
 
