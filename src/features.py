@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-from pyparsing import line
 
 # Load raw data
 results = pd.read_parquet("data/f1_all_results.parquet")
@@ -26,27 +25,42 @@ races['GridPosition'] = races['GridPosition'].fillna(20).astype(int)
 
 # FEATURE 1: Qualifying gap to pole (from results, already there)
 
-quali = results[results.SessionType == 'Q'][['Abbreviation', 'Season', 'Round', 'Q1', 'Q2', 'Q3']].copy()
+quali = results[results.SessionType == 'Q'][['Abbreviation', 'Season', 'Round', 'Q1', 'Q2', 'Q3', 
+                                                'TeamName', 'Location', 'Circuit']].copy()
 
-# Best quali time per driver (furthest session they reached)
+# Convert all times to seconds
 for col in ['Q1', 'Q2', 'Q3']:
     quali[col] = pd.to_timedelta(quali[col]).dt.total_seconds()
 
+# Best quali time per driver (furthest session they reached)
 quali['QualiBestTime'] = quali[['Q3', 'Q2', 'Q1']].bfill(axis=1).iloc[:, 0]
+quali['QualiRank'] = quali.groupby(['Season', 'Round'])['QualiBestTime'].rank(method='first')
 
 # Gap to pole
 pole_time = quali.groupby(['Season', 'Round'])['QualiBestTime'].min().reset_index(name='PoleTime')
 quali = quali.merge(pole_time, on=['Season', 'Round'], how='left')
 quali['QualiGapToPole'] = quali['QualiBestTime'] - quali['PoleTime']
 
-quali = quali[['Abbreviation', 'Season', 'Round', 'QualiGapToPole']].copy()
-races = quali.merge(races, on=['Abbreviation','Season','Round'], how='outer')
+# Only keep columns that are needed
+quali = quali[['Abbreviation', 'Season', 'Round', 'QualiGapToPole', 'QualiRank',
+               'TeamName', 'Location', 'Circuit']].copy()
 
-# drop rows that are quali-only in an already-completed race
+races = quali.merge(races, on=['Abbreviation', 'Season', 'Round'],
+                    how='outer', suffixes=('_q', ''))
+
+# drop rows that are quali-only in an already-completed race (DNS)
 race_happened = races.groupby(['Season', 'Round'])['Position'].transform(lambda x: x.notna().any())
-
 races = races[~(race_happened & races['Position'].isna())]
 
+# for not-yet-run races the results side is NaN — fill from the quali side
+for c in ['TeamName', 'Location', 'Circuit']:
+    races[c] = races[c].fillna(races[c + '_q'])
+    
+# for not-yet-run races GridPosition is NaN (no results row) — fill from quali order
+races['GridPosition'] = races['GridPosition'].fillna(races['QualiRank'])
+
+# Drop redundant columns
+races = races.drop(columns=['QualiRank', 'TeamName_q', 'Location_q', 'Circuit_q'])
 races["race_id"] = races["Season"].astype(str) + "_" + races["Round"].astype(str)
 
 

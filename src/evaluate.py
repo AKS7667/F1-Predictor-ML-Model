@@ -19,3 +19,13 @@ for i in range(5):
 
 # 4. score with the same evaluate() train.py uses
 results = evaluate(fold_models, X_test, y_test, groups_test)
+
+
+# 5. score and print
+results = evaluate(fold_models, X_test, y_test, groups_test)
+
+print("\n=== Held-out Test Results ===")
+print(f"  MAE              : {results['mae']:.3f}   (target: < 3.0)")
+print(f"  Spearman (mean)  : {results['spearman_mean']:.3f} (target: > 0.65)")
+print(f"  Podium hit rate  : {results['podium_hit_rate']:.3f} (target: > 0.60)")
+print(f"  Points hit rate  : {results['points_hit_rate']:.3f} (target: > 0.75)")

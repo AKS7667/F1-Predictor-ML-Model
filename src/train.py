@@ -408,6 +408,7 @@ def main():
     train_df = train_df.dropna(subset=["Position"])           # incomplete races can't train
     
     test_df  = df[df["Season"].isin(CONFIG["test_seasons"])]
+    test_df  = test_df.dropna(subset=["Position"])            # unscored races can't be evaluated
 
     X_train, y_train, groups_train = split_features_target(train_df)
     X_test,  y_test,  groups_test  = split_features_target(test_df)
