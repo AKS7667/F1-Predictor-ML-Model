@@ -2,7 +2,7 @@
 
 A machine learning model that predicts the finishing order of a Formula 1 race.
 
-It uses an XGBoost regressor trained on 2021–2024 seasons with engineered features (driver form, qualifying pace, constructor strength, circuit history, weather, and DNF risk). The model is trained with a squared-error objective — it learns to predict each driver's expected finishing position, and the drivers are then sorted by that prediction to produce the race order.
+It uses an XGBoost regressor trained on 2021–2024 seasons with engineered features (driver form, qualifying pace, constructor strength, circuit history, weather, and DNF risk). Models are trained and validated with 5-fold cross-validation grouped by race, so no race appears in both training and validation — the reported scores reflect performance on races the model hasn't seen.The model is trained with a squared-error objective — it learns to predict each driver's expected finishing position, and the drivers are then sorted by that prediction to produce the race order.
 
 Because it's a regression sorted into a ranking, the raw predicted values tend to compress toward the middle of the field (a likely winner might score ~3.5, not 1.0). That's expected — the order is the product, not the raw number, which is why the model is judged on rank-based metrics alongside raw error.
 
