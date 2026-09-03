@@ -6,7 +6,6 @@ results = pd.read_parquet("data/f1_all_results.parquet")
 laps = pd.read_parquet("data/f1_all_laps.parquet")
 weather = pd.read_parquet("data/f1_all_weather.parquet")
 
-
 # BASE: Race results only
 
 races = results[results.SessionType == 'R'].copy()
