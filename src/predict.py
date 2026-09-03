@@ -19,6 +19,7 @@ def load_models(pattern=MODEL_GLOB):
     if not models:
         raise FileNotFoundError(f"No models matched {pattern}")
     return models
+
 def coverage_report(df=None):
     if df is None:
         df = pd.read_parquet(FEATURES)
@@ -74,16 +75,13 @@ def predict_race(season, rnd, rain, df=None, models=None):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("season", type=int)
-    p.add_argument("round", type=int)
+    p.add_argument("season", type=int, nargs="?")
+    p.add_argument("round", type=int, nargs="?")
     p.add_argument("--coverage", action="store_true",
                    help="list which races are scored / predictable, then exit")
     p.add_argument("--rain", type=int, choices=[0, 1], default=None,
-            help="override rain at start (0 dry, 1 wet); omit to use stored value")
+                   help="override rain at start (0 dry, 1 wet); omit to use stored value")
     args = p.parse_args()
-
-    print(predict_race(args.season, args.round, rain=args.rain).to_string(index=False))
-
 
     if args.coverage:
         coverage_report()

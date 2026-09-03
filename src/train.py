@@ -128,10 +128,10 @@ CONFIG = {
     # testing — this mirrors how the model would be deployed (predict the
     # *next* race given everything before it). Random splits would leak future
     # info into training and inflate metrics.
-    "train_seasons": list(range(2014, 2025)),  # turbo-hybrid era only;
+    "train_seasons": list(range(2014, 2026)),  # turbo-hybrid era only;
                                                # pre-2014 cars are a different
                                                # regime and would add noise.
-    "test_seasons":  [2025],
+    "test_seasons":  [2026],
 
     # ---- Model hyperparameters ----
     # These are sensible defaults for tabular regression with ~10k rows.
@@ -242,7 +242,7 @@ def load_data(path: str) -> pd.DataFrame:
     df["race_id"] = df["Season"].astype(str) + "_" + df["Round"].astype(str)
 
     # Sanity checks. These have caught bugs in upstream ETL more than once.
-    assert df["Position"].between(1, 21).all(), \
+    assert df["Position"].between(1, 24).all(), \
         "finishing_position out of expected range — check DNF handling in ETL"
     assert df["race_id"].notna().all(), "race_id has nulls — joins broke upstream"
 
@@ -360,6 +360,7 @@ def evaluate(models, X_test: pd.DataFrame, y_test: pd.Series,
     preds = np.mean([m.predict(X_test) for m in models], axis=0)
 
     overall_mae = mean_absolute_error(y_test, preds)
+    rank_mae = mean_absolute_error(y_test.rank(), pd.Series(preds).rank())
 
     # Per-race metrics
     df_eval = pd.DataFrame({
@@ -371,6 +372,7 @@ def evaluate(models, X_test: pd.DataFrame, y_test: pd.Series,
     spearman_per_race = []
     podium_hits = []
     points_hits = []
+    rank_mae=[]
 
     for _, race in df_eval.groupby("race_id"):
         # Spearman rank correlation between predicted and actual finishing
@@ -388,8 +390,13 @@ def evaluate(models, X_test: pd.DataFrame, y_test: pd.Series,
         pred_top10   = set(race.nsmallest(10, "y_pred").index)
         points_hits.append(len(actual_top10 & pred_top10) / 10)
 
+        race["y_rank"] = race["y_pred"].rank(method="first")
+        rank_mae_per_race = mean_absolute_error(race["y_true"].rank(method="first"), race["y_rank"])
+        rank_mae.append(rank_mae_per_race)
+
     return {
         "mae": overall_mae,
+        "rank_mae": np.mean(rank_mae),
         "spearman_mean": np.mean(spearman_per_race),
         "podium_hit_rate": np.mean(podium_hits),
         "points_hit_rate": np.mean(points_hits),
@@ -426,6 +433,7 @@ def main():
 
     print("\n=== Held-out Test Results ===")
     print(f"  MAE              : {results['mae']:.3f}   (target: < 3.0)")
+    print(f"  Rank MAE         : {results['rank_mae']:.3f} (target: < 3.0)")
     print(f"  Spearman (mean)  : {results['spearman_mean']:.3f} (target: > 0.65)")
     print(f"  Podium hit rate  : {results['podium_hit_rate']:.3f} (target: > 0.60)")
     print(f"  Points hit rate  : {results['points_hit_rate']:.3f} (target: > 0.75)")

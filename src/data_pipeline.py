@@ -2,13 +2,14 @@ import fastf1
 import time
 import pandas as pd
 import os
+from fastf1._api import SessionNotAvailableError
 
 # ---- Config ----
 cache_dir = "data/fastf1_cache"
 os.makedirs(cache_dir, exist_ok=True)
 os.makedirs("data", exist_ok=True)
 fastf1.Cache.enable_cache(cache_dir)
-fastf1.set_log_level('DEBUG')
+fastf1.set_log_level('WARNING')
 
 PROGRESS_FILE = "data/fetch_progress.csv"
 RESULTS_FILE = "data/f1_all_results.parquet"
@@ -20,7 +21,7 @@ SESSION_TYPES = ['FP1', 'FP2', 'FP3', 'Q', 'SQ', 'S', 'R']
 RATE_LIMIT_WAIT = 3600
 
 
-print("I am running the updated file now 1")
+print("I am running the updated file now ")
 
 def load_progress():
     """Load set of already-fetched (year, round, session_type) tuples
@@ -62,6 +63,7 @@ def load_session_with_retry(year, round_no, session_type='R', retries=3, delay=5
             return session
         except Exception as e:
             if session_does_not_exist(e):
+                print("Session Does not exist")
                 return None
             if is_rate_limited(e):
                 print(f"\n*** Rate limit hit at {year} R{round_no} {session_type}. "
@@ -88,6 +90,13 @@ def session_does_not_exist(exception):
 completed = load_progress()
 print(f"Already have {len(completed)} sessions saved. Skipping those.\n")
 
+SESSION_OFFSET = {          # days after Session1 (Friday/day 1)
+    'FP1': 0, 'FP2': 0, 'FP3': 1,
+    'Q': 1, 'SQ': 0, 'S': 1, 'R': 2,
+}
+
+now = pd.Timestamp.now(tz='UTC')
+
 for year in YEARS:
     try:
         schedule = fastf1.get_event_schedule(year)
@@ -100,27 +109,41 @@ for year in YEARS:
         if round_no == 0:
             continue
 
+        day1 = event.get('Session1DateUtc')
         location = event['Location']
         event_name = event['EventName']
 
         event_format = str(event.get('EventFormat', '')).lower()
-
-
         has_sprint = 'sprint' in event_format
+
+
         for stype in SESSION_TYPES:
 
             if (year, round_no, stype) in completed:
+                print(f"Data for {year} R{round_no} {stype} already fetched. Skipping.")
                 continue
 
             if stype in ('S', 'SQ') and not has_sprint:
+                print(f"Skipping {year} R{round_no} {stype} (no sprint)")
                 continue
 
             if stype in ('FP2', 'FP3') and has_sprint:
+                print(f"Skipping {year} R{round_no} {stype} (sprint format)")
                 continue
 
             session = load_session_with_retry(year, round_no, session_type=stype)
             if session is None:
                 continue
+
+            # skip sessions whose day hasn't arrived yet; Assumes Race on Sunday structure, change for 
+            # different structures.To change, adjust SESSION_OFFSET above to reflect the number of days after Session1 that each session occurs.
+            if pd.notna(day1):
+                sdate = pd.Timestamp(day1) + pd.Timedelta(days=SESSION_OFFSET[stype])
+                if sdate.tz is None:
+                    sdate = sdate.tz_localize('UTC')
+                if sdate > now:
+                    continue
+
 
             metadata = {
                 'Season': year,

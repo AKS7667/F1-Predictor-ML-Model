@@ -17,9 +17,10 @@ races['GridPosition'] = pd.to_numeric(races['GridPosition'], errors='coerce')
 races['Position'] = pd.to_numeric(races['Position'], errors='coerce')
 races["race_id"] = races["Season"].astype(str) + "_" + races["Round"].astype(str)
 
-# DNFs get position 21
-races['Position'] = races['Position'].fillna(21).astype(int)
-races['GridPosition'] = races['GridPosition'].fillna(20).astype(int)
+# DNFs get last position
+max_field = races.groupby("race_id")["Position"].transform("count").max()
+races['Position'] = races['Position'].fillna(max_field + 1).astype(int)
+races['GridPosition'] = races['GridPosition'].fillna(max_field + 1).astype(int)
 
 
 
@@ -62,6 +63,7 @@ races['GridPosition'] = races['GridPosition'].fillna(races['QualiRank'])
 races = races.drop(columns=['QualiRank', 'TeamName_q', 'Location_q', 'Circuit_q'])
 races["race_id"] = races["Season"].astype(str) + "_" + races["Round"].astype(str)
 
+# print(races.isna().sum())
 
 # FEATURE 2: Driver form : avg finish last 5 races
 
